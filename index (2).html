@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BOS Live Radar — Logan Airport</title>
+<style>
+:root{color-scheme:dark;--g:#70ff9b;--m:#78ad89;--l:#1c6338}*{box-sizing:border-box}
+body{margin:0;background:#020805;color:#caffd6;font:14px/1.45 Consolas,"Courier New",monospace}
+header{padding:14px 20px;background:#06130b;border-bottom:1px solid var(--l);display:flex;justify-content:space-between;align-items:center;gap:12px}
+h1{margin:0;color:var(--g);font-size:clamp(19px,3vw,28px);letter-spacing:2px}.sub{color:var(--m);font-size:11px;letter-spacing:1px}
+.pill{border:1px solid #287448;padding:5px 9px;color:#aaffbd;white-space:nowrap}
+main{max-width:1450px;margin:auto;padding:15px;display:grid;grid-template-columns:minmax(0,1fr)320px;gap:15px}
+.panel{background:#041009;border:1px solid var(--l);box-shadow:inset 0 0 18px #061b0d}.panelhead{padding:10px 12px;border-bottom:1px solid #17482b;color:#a4ffbd;font-size:12px;letter-spacing:1px;display:flex;justify-content:space-between;gap:8px}
+#scopeWrap{padding:9px}canvas{display:block;width:100%;aspect-ratio:1;background:#010704}
+.legend{padding:9px 12px;border-top:1px solid #17482b;color:var(--m);font-size:10px;display:flex;flex-wrap:wrap;gap:13px}
+.dot{display:inline-block;width:8px;height:8px;background:var(--g);border-radius:50%;margin-right:5px;box-shadow:0 0 7px var(--g)}
+aside{display:flex;flex-direction:column;gap:14px}.stats{padding:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stat{padding:9px;background:#07190d;border:1px solid #17482b}.stat strong{display:block;color:#a4ffbd;font-size:20px}.stat span{color:var(--m);font-size:10px;letter-spacing:1px}
+#aircraftList{padding:7px;max-height:300px;overflow:auto}.target{width:100%;text-align:left;display:block;background:#06150b;color:#aaffbd;border:1px solid #17482b;padding:8px;margin:4px 0;font:inherit;cursor:pointer}
+.target:hover,.target.selected{border-color:#9cffb2;background:#0b2815}.target small{display:block;color:#75a986;margin-top:3px}
+#detail{padding:12px;min-height:150px;color:#83b992;overflow-wrap:anywhere}#detail strong{color:#b6ffc7}
+.note{padding:11px;color:#78a987;font-size:10px;line-height:1.6}button.action{background:#0a2111;color:#aaffbd;border:1px solid #287448;padding:5px 9px;font:inherit;cursor:pointer}
+#status{padding:10px 12px;color:#9decb1;font-size:11px;border-top:1px solid #17482b}footer{text-align:center;color:#527c5d;padding:0 15px 18px;font-size:10px}a{color:#aaffbd}
+@media(max-width:850px){main{grid-template-columns:1fr}aside{display:grid;grid-template-columns:1fr 1fr}aside .panel:last-child{grid-column:1/-1}}
+@media(max-width:560px){header{align-items:flex-start;flex-direction:column}aside{display:flex}}
+</style></head>
+<body>
+<header><div><h1>BOS // LIVE RADAR</h1><div class="sub">BOSTON LOGAN INTERNATIONAL · 20 NAUTICAL MILE RANGE</div></div><div class="pill" id="connection">● CONNECTING TO ADS-B.LOL</div></header>
+<main>
+<section class="panel"><div class="panelhead"><span>PRIMARY RADAR DISPLAY</span><span id="clock">LOCAL TIME --:--:--</span></div>
+<div id="scopeWrap"><canvas id="radar" aria-label="Live aircraft radar around Boston Logan Airport"></canvas></div>
+<div class="legend"><span><i class="dot"></i>LIVE ADS-B TARGET</span><span>RUNWAY (SCHEMATIC)</span><span>RANGE RINGS: 5 / 10 / 15 / 20 NM</span><span>SELECT A TARGET</span></div><div id="status">Waiting for first aircraft update…</div></section>
+<aside>
+<section class="panel"><div class="panelhead"><span>DISPLAY SUMMARY</span><button class="action" id="refresh">UPDATE NOW</button></div><div class="stats">
+<div class="stat"><strong id="count">—</strong><span>LIVE TARGETS</span></div><div class="stat"><strong>20 NM</strong><span>RANGE</span></div><div class="stat"><strong id="freshness">—</strong><span>LAST UPDATE</span></div><div class="stat"><strong>KBOS</strong><span>AIRPORT</span></div></div></section>
+<section class="panel"><div class="panelhead"><span>LIVE AIRCRAFT</span><span id="targetCount">0</span></div><div id="aircraftList">Waiting for data…</div></section>
+<section class="panel"><div class="panelhead"><span>AIRCRAFT DATA BLOCK</span><span id="selectedTag">NO TARGET</span></div><div id="detail">Select an aircraft on the radar or in the list to view its available ADS-B information.</div></section>
+<section class="panel note"><strong>LOGAN RUNWAYS — SCHEMATIC ORIENTATION</strong><br>04L/22R · 04R/22L · 09/27<br>14/32 · 15L/33R · 15R/33L<br><br>Aircraft positions come from community ADS-B receivers. Coverage, identity, and position availability vary. Some aircraft may not appear or may have incomplete details.</section>
+</aside></main>
+<footer>DATA: <a href="https://www.adsb.lol/" target="_blank" rel="noopener">ADSB.lol</a> · Open aircraft data, ODbL 1.0 · Not an official ATC display, not for navigation or flight operations.</footer>
+<script>
+(()=>{
+"use strict";
+const AIRPORT={lat:42.3656,lon:-71.0096},RANGE_NM=20,REFRESH_MS=15000;
+const API_URL=`https://api.adsb.lol/v2/lat/${AIRPORT.lat}/lon/${AIRPORT.lon}/dist/${RANGE_NM}`;
+const canvas=document.getElementById("radar"),ctx=canvas.getContext("2d");
+const list=document.getElementById("aircraftList"),detail=document.getElementById("detail");
+const statusEl=document.getElementById("status"),connection=document.getElementById("connection");
+const countEl=document.getElementById("count"),targetCount=document.getElementById("targetCount");
+const freshness=document.getElementById("freshness"),selectedTag=document.getElementById("selectedTag");
+let width=0,height=0,cx=0,cy=0,radius=0,sweep=0,prev=0,aircraft=[],selectedHex=null,lastUpdate=null,busy=false;
+// Six Logan runways. Their placement is schematic, not a surveyed airport chart.
+const runways=[
+{name:"04L/22R",bearing:35,len:.70,ox:-.035,oy:-.035},
+{name:"04R/22L",bearing:35,len:.88,ox:.035,oy:.035},
+{name:"09/27",bearing:91,len:.62,ox:.015,oy:-.025},
+{name:"14/32",bearing:141,len:.42,ox:.005,oy:.025},
+{name:"15L/33R",bearing:150,len:.24,ox:-.015,oy:.045},
+{name:"15R/33L",bearing:150,len:.90,ox:-.055,oy:-.045}];
+function resize(){const rect=canvas.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2),s=Math.max(260,rect.width);canvas.width=s*dpr;canvas.height=s*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);width=height=s;cx=cy=s/2;radius=s*.415}
+function project(lat,lon){return{x:(lon-AIRPORT.lon)*60*Math.cos(AIRPORT.lat*Math.PI/180)/RANGE_NM,y:-(lat-AIRPORT.lat)*60/RANGE_NM}}
+function drawRunways(){ctx.save();ctx.translate(cx,cy);runways.forEach(r=>{const a=r.bearing*Math.PI/180,h=radius*r.len/2,ox=r.ox*radius,oy=r.oy*radius,dx=Math.sin(a)*h,dy=-Math.cos(a)*h;ctx.lineCap="butt";ctx.strokeStyle="#8fb99b";ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(ox-dx,oy-dy);ctx.lineTo(ox+dx,oy+dy);ctx.stroke();ctx.strokeStyle="#294d35";ctx.lineWidth=1;ctx.stroke();ctx.fillStyle="#c5f4d0";ctx.font="9px Consolas";ctx.textAlign="center";ctx.fillText(r.name,ox+Math.sin(a)*(h+17),oy-Math.cos(a)*(h+17)+3)});ctx.fillStyle="#aaffbd";ctx.font="bold 11px Consolas";ctx.textAlign="center";ctx.fillText("BOS / KBOS",0,-8);ctx.restore()}
+function drawGrid(){ctx.clearRect(0,0,width,height);ctx.fillStyle="#010704";ctx.fillRect(0,0,width,height);ctx.strokeStyle="#17482b";ctx.lineWidth=1;
+for(let n=1;n<=4;n++){ctx.beginPath();ctx.arc(cx,cy,radius*n/4,0,Math.PI*2);ctx.stroke();ctx.fillStyle="#70a982";ctx.font="10px Consolas";ctx.textAlign="left";ctx.fillText(`${n*5} NM`,cx+radius*n/4+4,cy-4)}
+ctx.beginPath();ctx.moveTo(cx-radius,cy);ctx.lineTo(cx+radius,cy);ctx.moveTo(cx,cy-radius);ctx.lineTo(cx,cy+radius);ctx.stroke();
+for(let d=0;d<360;d+=30){const a=d*Math.PI/180,x=cx+Math.sin(a)*radius,y=cy-Math.cos(a)*radius;ctx.fillStyle="#78b88b";ctx.textAlign="center";ctx.font="10px Consolas";ctx.fillText(String(d).padStart(3,"0"),cx+Math.sin(a)*(radius+15),cy-Math.cos(a)*(radius+15)+3);ctx.beginPath();ctx.moveTo(cx+Math.sin(a)*(radius-4),cy-Math.cos(a)*(radius-4));ctx.lineTo(x,y);ctx.stroke()}drawRunways()}
+function drawSweep(dt){sweep=(sweep+dt*.00055)%(Math.PI*2);ctx.save();ctx.translate(cx,cy);ctx.beginPath();ctx.moveTo(0,0);ctx.arc(0,0,radius,sweep-.20,sweep);ctx.closePath();const g=ctx.createRadialGradient(0,0,0,0,0,radius);g.addColorStop(0,"rgba(80,255,130,.01)");g.addColorStop(1,"rgba(80,255,130,.17)");ctx.fillStyle=g;ctx.fill();ctx.strokeStyle="#63ff91";ctx.lineWidth=2;ctx.shadowColor="#63ff91";ctx.shadowBlur=8;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(Math.sin(sweep)*radius,-Math.cos(sweep)*radius);ctx.stroke();ctx.restore();ctx.shadowBlur=0}
+function cs(p){return(p.flight||p.hex||"UNKNOWN").trim()}
+function alt(p){const v=p.alt_baro??p.alt_geom;if(v==="ground")return"GROUND";return Number.isFinite(Number(v))?`${Math.round(Number(v)).toLocaleString()} FT`:"UNKNOWN"}
+function speed(p){return Number.isFinite(Number(p.gs))?`${Math.round(Number(p.gs))} KT`:"UNKNOWN"}
+function heading(p){return Number.isFinite(Number(p.track))?`${Math.round(Number(p.track))}°`:"UNKNOWN"}
+function drawTargets(){aircraft.forEach(p=>{const q=project(p.lat,p.lon),x=cx+q.x*radius,y=cy+q.y*radius;if(!Number.isFinite(x)||!Number.isFinite(y))return;ctx.save();ctx.translate(x,y);ctx.fillStyle="#c4ffd1";ctx.shadowColor="#62ff91";ctx.shadowBlur=p.hex===selectedHex?16:9;ctx.beginPath();ctx.arc(0,0,p.hex===selectedHex?5:3.5,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;if(Number.isFinite(Number(p.track))){const a=Number(p.track)*Math.PI/180;ctx.strokeStyle="#a4ffbd";ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(Math.sin(a)*15,-Math.cos(a)*15);ctx.stroke()}ctx.fillStyle="#b8ffc8";ctx.font="10px Consolas";ctx.textAlign="left";ctx.fillText(cs(p),7,-7);ctx.restore()})}
+function renderList(){countEl.textContent=aircraft.length;targetCount.textContent=aircraft.length;if(!aircraft.length){list.textContent="No aircraft with a recent position were returned inside 20 NM.";return}list.replaceChildren();aircraft.forEach(p=>{const b=document.createElement("button");b.className="target"+(p.hex===selectedHex?" selected":"");const title=document.createElement("span");title.textContent=cs(p);const small=document.createElement("small");small.textContent=`${alt(p)} · ${speed(p)} · HDG ${heading(p)}`;b.append(title,small);b.addEventListener("click",()=>select(p));list.append(b)})}
+function select(p){selectedHex=p.hex;selectedTag.textContent=cs(p);detail.replaceChildren();const rows=[["CALLSIGN",cs(p)],["ICAO HEX",p.hex||"UNKNOWN"],["ALTITUDE",alt(p)],["GROUND SPEED",speed(p)],["HEADING",heading(p)],["REGISTRATION",p.r||"UNKNOWN"],["AIRCRAFT TYPE",p.t||"UNKNOWN"],["POSITION AGE",Number.isFinite(Number(p.seen_pos))?`${Number(p.seen_pos).toFixed(1)} sec ago`:"not provided"]];rows.forEach(([k,v])=>{const d=document.createElement("div"),s=document.createElement("strong");s.textContent=k+": ";d.append(s,document.createTextNode(v));detail.append(d)});renderList()}
+async function update(){if(busy)return;busy=true;connection.textContent="● FETCHING LIVE DATA";try{const r=await fetch(API_URL,{cache:"no-store"});if(!r.ok)throw Error(`ADSB.lol returned HTTP ${r.status}`);const data=await r.json(),incoming=Array.isArray(data.ac)?data.ac:[];aircraft=incoming.filter(p=>Number.isFinite(Number(p.lat))&&Number.isFinite(Number(p.lon))&&Number.isFinite(Number(p.seen_pos))&&Number(p.seen_pos)<=120).filter(p=>{const q=project(Number(p.lat),Number(p.lon));return Math.hypot(q.x,q.y)<=1.005}).map(p=>({...p,lat:Number(p.lat),lon:Number(p.lon)}));lastUpdate=Date.now();freshness.textContent=new Date(lastUpdate).toLocaleTimeString();connection.textContent="● LIVE DATA CONNECTED";connection.style.color="#aaffbd";statusEl.textContent=`Received ${incoming.length} records; displaying ${aircraft.length} with recent positions inside 20 NM. Updated ${new Date(lastUpdate).toLocaleTimeString()}.`;if(selectedHex){const current=aircraft.find(p=>p.hex===selectedHex);if(current)select(current);else{selectedHex=null;selectedTag.textContent="NO TARGET";detail.textContent="The selected aircraft is no longer in the latest update."}}renderList()}catch(e){connection.textContent="● DATA CONNECTION ISSUE";connection.style.color="#ffcb75";statusEl.textContent=`Could not update aircraft data: ${e.message}. Check your internet connection or try again later.`;if(!lastUpdate)list.textContent="Live data unavailable right now. The radar sweep will continue; try updating again."}finally{busy=false}}
+function frame(t){const dt=Math.min(t-(prev||t),50);prev=t;drawGrid();drawSweep(dt);drawTargets();document.getElementById("clock").textContent="LOCAL TIME "+new Date().toLocaleTimeString();requestAnimationFrame(frame)}
+canvas.addEventListener("click",e=>{const r=canvas.getBoundingClientRect(),x=(e.clientX-r.left)*width/r.width,y=(e.clientY-r.top)*height/r.height;let best=null,dist=16;aircraft.forEach(p=>{const q=project(p.lat,p.lon),d=Math.hypot(x-(cx+q.x*radius),y-(cy+q.y*radius));if(d<dist){dist=d;best=p}});if(best)select(best)});
+document.getElementById("refresh").addEventListener("click",update);window.addEventListener("resize",resize);resize();renderList();requestAnimationFrame(frame);update();setInterval(update,REFRESH_MS);
+})();
+</script></body></html>
