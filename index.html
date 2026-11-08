@@ -42,7 +42,7 @@ aside{display:flex;flex-direction:column;gap:14px}.stats{padding:10px;display:gr
 (()=>{
 "use strict";
 const AIRPORT={lat:42.3656,lon:-71.0096},RANGE_NM=20,REFRESH_MS=15000;
-const API_URL=`https://api.adsb.lol/v2/lat/${AIRPORT.lat}/lon/${AIRPORT.lon}/dist/${RANGE_NM}`;
+const API_URL= "https://api.adsb.lol/v2/point/42.362944/-71.006389/20";
 const canvas=document.getElementById("radar"),ctx=canvas.getContext("2d");
 const list=document.getElementById("aircraftList"),detail=document.getElementById("detail");
 const statusEl=document.getElementById("status"),connection=document.getElementById("connection");
